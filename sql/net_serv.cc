@@ -1063,15 +1063,18 @@ retry:
                   NET_HEADER_SIZE);
 #endif
 
-        /*
-          If the server kills the connection on its end, it can send an
-          out-of-order (i.e. pkt_nr will always be 1) notification
-        */
-        if (net->buff[net->where_b + 3] != (uchar) net->pkt_nr &&
-            (vio_is_connected(net->vio) || net->buff[net->where_b + 3] != 1))
+        if (net->buff[net->where_b + 3] != (uchar) net->pkt_nr)
         {
+          if (net->buff[net->where_b + 3] == (uchar) (net->pkt_nr -1)
 #ifndef MYSQL_SERVER
-          if (net->buff[net->where_b + 3] == (uchar) (net->pkt_nr -1))
+          )
+#else
+          /*
+            Slave threads should be treated as a client here because they
+            cannot receive SQL commands directly from a user.
+          */
+           && ((THD*)net->thd)->slave_thread)
+#endif
           {
             /*
               If the server was killed then the server may have missed the
@@ -1081,7 +1084,6 @@ retry:
             expect_error_packet= 1;
           }
           else
-#endif
             goto packets_out_of_order;
         }
         net->compress_pkt_nr= ++net->pkt_nr;
@@ -1132,7 +1134,6 @@ retry:
         }
 #endif
       }
-#ifndef MYSQL_SERVER
       else if (expect_error_packet)
       {
         /*
@@ -1146,7 +1147,6 @@ retry:
           goto packets_out_of_order;
         }
       }
-#endif
     }
 
 end:

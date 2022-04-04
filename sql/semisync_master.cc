@@ -906,7 +906,7 @@ int Repl_semi_sync_master::commit_trx(const char* trx_wait_binlog_name,
       /* We keep track of when this thread is awaiting an ack to ensure it is
        * not killed while awaiting an ACK if a shutdown is issued.
        */
-      thd->set_awaiting_semisync_ack(TRUE);
+      set_thd_awaiting_semisync_ack(thd, TRUE);
 
       DBUG_PRINT("semisync", ("%s: wait %lu ms for binlog sent (%s, %lu)",
                               "Repl_semi_sync_master::commit_trx",
@@ -916,7 +916,7 @@ int Repl_semi_sync_master::commit_trx(const char* trx_wait_binlog_name,
       create_timeout(&abstime, &start_ts);
       wait_result = cond_timewait(&abstime);
 
-      thd->set_awaiting_semisync_ack(FALSE);
+      set_thd_awaiting_semisync_ack(thd, FALSE);
       rpl_semi_sync_master_wait_sessions--;
 
       if (wait_result != 0)

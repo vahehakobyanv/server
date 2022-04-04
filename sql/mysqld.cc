@@ -1530,7 +1530,8 @@ static my_bool kill_thread_phase_1(THD *thd, int *n_threads_awaiting_ack)
                       (ulong) thd->thread_id));
 
   if (thd->slave_thread || thd->is_binlog_dump_thread() ||
-      (shutdown_wait_for_slaves && thd->is_awaiting_semisync_ack() &&
+      (shutdown_wait_for_slaves &&
+       repl_semisync_master.is_thd_awaiting_semisync_ack(thd) &&
        ++(*n_threads_awaiting_ack)))
     return 0;
 

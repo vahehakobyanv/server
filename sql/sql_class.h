@@ -4829,29 +4829,17 @@ public:
   /*
     Indicates if this thread is suspended due to awaiting an ACK from a
     replica. True if suspended, false otherwise.
+
+    Note that this variable is protected by Repl_semi_sync_master::LOCK_binlog
   */
-  bool awaiting_semisync_ack;
+  bool is_awaiting_semisync_ack;
 
   void set_current_linfo(LOG_INFO *linfo);
   void reset_current_linfo() { set_current_linfo(0); }
 
-  void set_awaiting_semisync_ack(bool status)
-  {
-    mysql_mutex_lock(&LOCK_thd_data);
-    awaiting_semisync_ack= status;
-    mysql_mutex_unlock(&LOCK_thd_data);
-  }
-
   int register_slave(uchar *packet, size_t packet_length);
   void unregister_slave();
   bool is_binlog_dump_thread();
-  bool is_awaiting_semisync_ack()
-  {
-    mysql_mutex_lock(&LOCK_thd_data);
-    bool res= awaiting_semisync_ack;
-    mysql_mutex_unlock(&LOCK_thd_data);
-    return res;
-  }
 #endif
 
   inline ulong wsrep_binlog_format() const

@@ -635,6 +635,30 @@ class Repl_semi_sync_master
 
   void check_and_switch();
 
+  /*
+    Determines if the given thread is currently awaiting a semisync_ack. Note
+    that the thread's value is protected by this class's LOCK_binlog, so this
+    function (indirectly) provides safe access.
+  */
+  my_bool is_thd_awaiting_semisync_ack(THD *thd)
+  {
+    lock();
+    my_bool ret= thd->is_awaiting_semisync_ack;
+    unlock();
+    return ret;
+  }
+
+  /*
+    Update the thread's value for is_awaiting_semisync_ack. LOCK_binlog (from
+    this class) should be acquired before calling this function.
+  */
+  void set_thd_awaiting_semisync_ack(THD *thd,
+                                     my_bool _is_awaiting_semisync_ack)
+  {
+    mysql_mutex_assert_owner(&LOCK_binlog);
+    thd->is_awaiting_semisync_ack= _is_awaiting_semisync_ack;
+  }
+
   mysql_mutex_t LOCK_rpl_semi_sync_master_enabled;
 };
 
