@@ -1065,16 +1065,8 @@ retry:
 
         if (net->buff[net->where_b + 3] != (uchar) net->pkt_nr)
         {
-          if (net->buff[net->where_b + 3] == (uchar) (net->pkt_nr -1)
 #ifndef MYSQL_SERVER
-          )
-#else
-          /*
-            Slave threads should be treated as a client here because they
-            cannot receive SQL commands directly from a user.
-          */
-           && ((THD*)net->thd)->slave_thread)
-#endif
+          if (net->buff[net->where_b + 3] == (uchar) (net->pkt_nr -1))
           {
             /*
               If the server was killed then the server may have missed the
@@ -1084,6 +1076,7 @@ retry:
             expect_error_packet= 1;
           }
           else
+#endif
             goto packets_out_of_order;
         }
         net->compress_pkt_nr= ++net->pkt_nr;
@@ -1134,6 +1127,7 @@ retry:
         }
 #endif
       }
+#ifndef MYSQL_SERVER
       else if (expect_error_packet)
       {
         /*
@@ -1147,6 +1141,7 @@ retry:
           goto packets_out_of_order;
         }
       }
+#endif
     }
 
 end:
