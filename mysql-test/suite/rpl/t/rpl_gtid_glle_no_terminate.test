@@ -46,6 +46,13 @@ let $errno= query_get_value(SHOW SLAVE STATUS, Last_SQL_Errno, 1);
 --echo Last_SQL_Errno = $errno
 
 --echo #
+--echo # Ensure that the primary sent a Glle after a Gtid event
+let $binlog_file= query_get_value(SHOW SLAVE STATUS, Relay_Log_File, 1);
+let $binlog_start= $relaylog_start;
+let $binlog_limit=0,10;
+--source include/show_relaylog_events.inc
+
+--echo #
 --echo # Ensure the DDL was executed on the replica
 if (!`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'test' AND table_name = 't2'`)
 {
