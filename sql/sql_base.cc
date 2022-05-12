@@ -819,7 +819,14 @@ int close_thread_tables(THD *thd)
                           table->s->table_name.str, (ulong) table->query_id));
 
     if (thd->locked_tables_mode)
+    {
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+      if (table->part_info && table->part_info->vers_require_hist_part(thd) &&
+          !thd->stmt_arena->is_stmt_prepare())
+        table->part_info->vers_check_limit(thd);
+#endif
       table->vcol_cleanup_expr(thd);
+    }
 
     /* Detach MERGE children after every statement. Even under LOCK TABLES. */
     if (thd->locked_tables_mode <= LTM_LOCK_TABLES ||
@@ -1661,60 +1668,43 @@ bool TABLE::vers_switch_partition(THD *thd, TABLE_LIST *table_list,
   }
 
   /*
-    NOTE: we need this condition of prelocking_placeholder because we cannot do
-    auto-create after the transaction is started. Auto-create does
-    close_tables_for_reopen() and that is not possible under started transaction.
-    Also the transaction may not be cancelled at that moment: f.ex. trigger
-    after insert is run when some data is already written.
+    NOTE: PRELOCK_ROUTINE does auto-create unconditionally.
 
-    We must do auto-creation for PRELOCK_ROUTINE tables at the initial
+    Auto-create does close_tables_for_reopen() and that is not possible under
+    started transaction. Also the transaction may not be cancelled at that
+    moment: f.ex. trigger after insert is run when some data is already written.
+
+    Hence we do auto-creation for PRELOCK_ROUTINE tables at the initial
     open_tables() no matter what initiating sql_command is.
   */
-  if (table_list->prelocking_placeholder != TABLE_LIST::PRELOCK_ROUTINE)
+  if (table_list->prelocking_placeholder != TABLE_LIST::PRELOCK_ROUTINE &&
+      !part_info->vers_require_hist_part(thd))
   {
-    switch (thd->lex->sql_command)
-    {
-      case SQLCOM_INSERT_SELECT:
-      case SQLCOM_INSERT:
-        if (thd->lex->duplicates != DUP_UPDATE)
-          return false;
-        break;
-      case SQLCOM_LOAD:
-        if (thd->lex->duplicates != DUP_REPLACE)
-          return false;
-        break;
-      case SQLCOM_LOCK_TABLES:
-      case SQLCOM_DELETE:
-      case SQLCOM_UPDATE:
-      case SQLCOM_REPLACE:
-      case SQLCOM_REPLACE_SELECT:
-      case SQLCOM_DELETE_MULTI:
-      case SQLCOM_UPDATE_MULTI:
-        break;
-      default:
-        /*
-          TODO: make row events set thd->lex->sql_command appropriately.
+    /*
+      TODO: make row events set thd->lex->sql_command appropriately.
 
-          Sergei Golubchik: f.ex. currently row events increment
-          thd->status_var.com_stat[] each event for its own SQLCOM_xxx, it won't be
-          needed if they'll just set thd->lex->sql_command.
-        */
-        if (thd->rgi_slave && thd->rgi_slave->current_event &&
-            thd->lex->sql_command == SQLCOM_END)
-        {
-          switch (thd->rgi_slave->current_event->get_type_code())
-          {
-          case UPDATE_ROWS_EVENT:
-          case UPDATE_ROWS_EVENT_V1:
-          case DELETE_ROWS_EVENT:
-          case DELETE_ROWS_EVENT_V1:
-            break;
-          default:;
-            return false;
-          }
-        }
+      Sergei Golubchik: f.ex. currently row events increment
+      thd->status_var.com_stat[] each event for its own SQLCOM_xxx, it won't be
+      needed if they'll just set thd->lex->sql_command.
+    */
+    bool auto_create= false;
+    if (thd->rgi_slave && thd->rgi_slave->current_event &&
+        thd->lex->sql_command == SQLCOM_END)
+    {
+      switch (thd->rgi_slave->current_event->get_type_code())
+      {
+      case UPDATE_ROWS_EVENT:
+      case UPDATE_ROWS_EVENT_V1:
+      case DELETE_ROWS_EVENT:
+      case DELETE_ROWS_EVENT_V1:
+        auto_create= true;
         break;
+      default:;
+        return false;
+      }
     }
+    if (!auto_create)
+      return false;
   }
 
   if (table_list->partition_names)
@@ -8664,9 +8654,11 @@ int setup_conds(THD *thd, TABLE_LIST *tables, List<TABLE_LIST> &leaves,
     thd->lex->which_check_option_applicable();
   bool save_is_item_list_lookup= select_lex->is_item_list_lookup;
   TABLE_LIST *derived= select_lex->master_unit()->derived;
+  bool save_resolve_in_select_list= select_lex->context.resolve_in_select_list;
   DBUG_ENTER("setup_conds");
 
   select_lex->is_item_list_lookup= 0;
+  select_lex->context.resolve_in_select_list= false;
 
   thd->column_usage= MARK_COLUMNS_READ;
   DBUG_PRINT("info", ("thd->column_usage: %d", thd->column_usage));
@@ -8719,7 +8711,8 @@ int setup_conds(THD *thd, TABLE_LIST *tables, List<TABLE_LIST> &leaves,
     select_lex->where= *conds;
   }
   thd->lex->current_select->is_item_list_lookup= save_is_item_list_lookup;
-  DBUG_RETURN(MY_TEST(thd->is_error()));
+  select_lex->context.resolve_in_select_list= save_resolve_in_select_list;
+  DBUG_RETURN(thd->is_error());
 
 err_no_arena:
   select_lex->is_item_list_lookup= save_is_item_list_lookup;
