@@ -1,0 +1,35 @@
+include/master-slave.inc
+[connection master]
+connection slave;
+include/stop_slave.inc
+CHANGE MASTER TO MASTER_USE_GTID=slave_pos;
+#
+# Initialize test data
+connection master;
+create table t1 (a int);
+SET @@session.server_id= 3;
+create table t2 (a int);
+include/save_master_gtid.inc
+#
+# Have the replica "reconnect" and the primary will send Gtid, Glle, DDL
+connection slave;
+set global gtid_slave_pos="0-3-1";
+include/start_slave.inc
+include/sync_with_master_gtid.inc
+#
+# Ensure that the replica did not error
+connection slave;
+include/sync_with_master_gtid.inc
+Last_SQL_Error = 
+Last_SQL_Errno = 0
+#
+# Ensure the DDL was executed on the replica
+#
+# Cleanup
+# t1 does not make it to the replica
+connection master;
+set sql_log_bin=0;
+DROP TABLE t1;
+set sql_log_bin=1;
+DROP TABLE t2;
+include/rpl_end.inc
