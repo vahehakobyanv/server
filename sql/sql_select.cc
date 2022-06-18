@@ -1877,7 +1877,8 @@ JOIN::optimize_inner()
     /* Merge all mergeable derived tables/views in this SELECT. */
     if (select_lex->handle_derived(thd->lex, DT_MERGE))
       DBUG_RETURN(TRUE);  
-    table_count= select_lex->leaf_tables.elements;
+    // OLEGS: duplicated
+    //table_count= select_lex->leaf_tables.elements;
   }
 
   if (select_lex->first_cond_optimization &&
@@ -1920,7 +1921,8 @@ JOIN::optimize_inner()
   
   eval_select_list_used_tables();
 
-  table_count= select_lex->leaf_tables.elements;
+  // OLEGS: duplicated
+  //table_count= select_lex->leaf_tables.elements;
 
   if (select_lex->options & OPTION_SCHEMA_TABLE &&
       optimize_schema_tables_memory_usage(select_lex->leaf_tables))
@@ -4379,7 +4381,13 @@ void JOIN::exec_inner()
     DBUG_VOID_RETURN;
 
   if (!tables_list && (table_count || !select_lex->with_sum_func) &&
-      !select_lex->have_window_funcs())
+      !select_lex->have_window_funcs() 
+    &&
+      !(select_lex->parent_lex->sql_command == SQLCOM_INSERT_SELECT && // OLEGS: add replace select?
+        table_count == 1 &&
+        select_lex->with_sum_func &&
+        !zero_result_cause)
+    )
   {                                           // Only test of functions
     if (select_options & SELECT_DESCRIBE)
       select_describe(this, FALSE, FALSE, FALSE,
@@ -6895,8 +6903,8 @@ update_ref_and_keys(THD *thd, DYNAMIC_ARRAY *keyuse,JOIN_TAB *join_tab,
 
       /* Mark that we can optimize LEFT JOIN */
       if (field->val->type() == Item::NULL_ITEM &&
-	  !field->field->real_maybe_null())
-	field->field->table->reginfo.not_exists_optimize=1;
+          !field->field->real_maybe_null())
+      field->field->table->reginfo.not_exists_optimize=1;
     }
     field= saved_field;
   }
@@ -13900,7 +13908,7 @@ void JOIN::cleanup(bool full)
     /* Free the original optimized join created for the group_by_handler */
     join_tab= original_join_tab;
     original_join_tab= 0;
-    table_count= original_table_count;
+    // table_count= original_table_count;
   }
 
   if (join_tab)
@@ -20094,7 +20102,11 @@ do_select(JOIN *join, Procedure *procedure)
   
   join->procedure= procedure;
   join->duplicate_rows= join->send_records=0;
-  if (join->only_const_tables() && !join->need_tmp)
+  if ((join->only_const_tables() && !join->need_tmp) 
+    ||
+    (!join->tables_list && (join->table_count || !join->select_lex->with_sum_func) 
+       /*&&      !join->select_lex->have_window_funcs()*/)
+      )
   {
     Next_select_func end_select= setup_end_select_func(join, NULL);
 
