@@ -313,6 +313,9 @@ public:
   Dep_value_table(TABLE *table_arg) : 
     table(table_arg), fields(NULL), keys(NULL), pseudo_key(NULL)
   {}
+
+  ~Dep_value_table();
+
   TABLE *table;  /* Table this object is representing */
   /* Ordered list of fields that belong to this table */
   Dep_value_field *fields;
@@ -387,7 +390,7 @@ public:
 protected:
   uint unbound_args;
   
-  Dep_module() : unbound_args(0) {}
+  explicit Dep_module(uint args= 0) : unbound_args(args) {}
   /* to bump unbound_args when constructing depedendencies */
   friend class Field_dependency_recorder; 
   friend class Dep_analysis_context;
@@ -437,10 +440,10 @@ class Dep_module_key: public Dep_module
 {
 public:
   Dep_module_key(Dep_value_table *table_arg, uint keyno_arg, uint n_parts_arg) :
-    table(table_arg), keyno(keyno_arg), next_table_key(NULL)
-  {
-    unbound_args= n_parts_arg;
-  }
+    Dep_module(n_parts_arg), table(table_arg), keyno(keyno_arg),
+    next_table_key(NULL)
+  {}
+
   Dep_value_table *table; /* Table this key is from */
   uint keyno;  /* The index we're representing */
   /* Unique keys form a linked list, ordered by keyno */
@@ -474,10 +477,12 @@ class Dep_module_pseudo_key : public Dep_module
 public:
   Dep_module_pseudo_key(Dep_value_table *table_arg,
                         std::set<field_index_t>&& field_indexes)
-      : table(table_arg), derived_table_field_indexes(field_indexes)
-  {
-    unbound_args= static_cast<uint>(field_indexes.size());
-  }
+      : Dep_module(static_cast<uint>(field_indexes.size())),
+        table(table_arg),
+        derived_table_field_indexes(std::move(field_indexes))
+  {}
+
+  ~Dep_module_pseudo_key() {}
 
   Dep_value_table *table;
 
@@ -517,6 +522,11 @@ const size_t Dep_module::iterator_size=
          MY_MAX(Dep_module_key::iterator_size,
                 Dep_module_pseudo_key::iterator_size));
 
+Dep_value_table::~Dep_value_table()
+{
+  delete pseudo_key;
+}
+
 /*
   A module that represents outer join that we're trying to eliminate. If we 
   manage to declare this module to be bound, then outer join can be eliminated.
@@ -525,10 +535,8 @@ const size_t Dep_module::iterator_size=
 class Dep_module_goal: public Dep_module
 {
 public:
-  Dep_module_goal(uint n_children)  
-  {
-    unbound_args= n_children;
-  }
+  explicit Dep_module_goal(uint n_children) : Dep_module(n_children) {}
+
   bool is_final() { return TRUE; }
   /* 
     This is the goal module, so the running wave algorithm should terminate
@@ -554,6 +562,12 @@ public:
 class Dep_analysis_context
 {
 public:
+  ~Dep_analysis_context()
+  {
+    for (int i= 0; i < MAX_KEY; i++)
+      delete table_deps[i];
+  }
+
   bool setup_equality_modules_deps(List<Dep_module> *bound_modules);
   bool run_wave(List<Dep_module> *new_bound_modules);
 
@@ -1722,7 +1736,8 @@ void Dep_analysis_context::create_unique_pseudo_key_if_needed(
     GROUP BY expression is considered as a unique pseudo-key
     for the derived table. Add this pseudo key as a dependency
   */
-  if (first_select && first_select->group_list.elements > 0)
+  if (first_select && first_select->join &&
+      first_select->group_list.elements > 0)
   {
     bool valid= true;
     std::set<field_index_t> exposed_fields_indexes;
