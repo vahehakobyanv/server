@@ -629,6 +629,7 @@ typedef struct system_variables
   ulonglong tmp_disk_table_size;
   ulonglong long_query_time;
   ulonglong max_statement_time;
+  ulonglong slave_max_statement_time;
   ulonglong optimizer_switch;
   ulonglong optimizer_trace;
   ulong optimizer_trace_max_mem_size;
@@ -797,7 +798,8 @@ typedef struct system_variables
   ulong   wsrep_trx_fragment_unit;
   ulong   wsrep_OSU_method;
   my_bool wsrep_dirty_reads;
-  double long_query_time_double, max_statement_time_double;
+  double long_query_time_double, max_statement_time_double,
+      slave_max_statement_time_double;
 
   my_bool pseudo_slave_mode;
 

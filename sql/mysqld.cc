@@ -462,6 +462,8 @@ ulonglong binlog_cache_size=0;
 ulonglong binlog_file_cache_size=0;
 ulonglong max_binlog_cache_size=0;
 ulong slave_max_allowed_packet= 0;
+double slave_max_statement_time_double;
+ulonglong slave_max_statement_time;
 ulonglong binlog_stmt_cache_size=0;
 ulonglong  max_binlog_stmt_cache_size=0;
 ulonglong test_flags;
@@ -8660,6 +8662,8 @@ static int get_options(int *argc_ptr, char ***argv_ptr)
     (global_system_variables.long_query_time_double * 1e6 + 0.1);
   global_system_variables.max_statement_time= (ulonglong)
     (global_system_variables.max_statement_time_double * 1e6 + 0.1);
+  global_system_variables.slave_max_statement_time= (ulonglong)
+    (global_system_variables.slave_max_statement_time_double * 1e6 + 0.1);
 
   if (opt_short_log_format)
     opt_specialflag|= SPECIAL_SHORT_LOG_FORMAT;
