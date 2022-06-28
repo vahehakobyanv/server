@@ -447,9 +447,11 @@ class Cache_flip_event_log: public Event_log, public Sql_alloc {
   IO_CACHE alt_buf;
   IO_CACHE *current, *alt;
 public:
+  bool error;
 
   Cache_flip_event_log() : Event_log(), alt_buf{},
-                           current(&log_file), alt(&alt_buf) {}
+                           current(&log_file), alt(&alt_buf),
+                           error(false) {}
   bool open(enum cache_type io_cache_type_arg)
   {
     log_file.dir= mysql_tmpdir;
