@@ -13,6 +13,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335  USA */
 
+#include <my_global.h> // for int2store
 #include <stdio.h>     // for snprintf
 #include <string.h>    // for memset
 #include <mysql/plugin_password_validation.h>
@@ -149,7 +150,7 @@ static int validate(const MYSQL_CONST_LEX_STRING *username,
                     const MYSQL_CONST_LEX_STRING *hostname)
 {
   MYSQL *mysql= NULL;
-  size_t key_len= username->length + password->length + hostname->length;
+  size_t key_len= username->length + password->length + hostname->length + 4;
   size_t buff_len= (key_len > SQL_BUFF_LEN ? key_len : SQL_BUFF_LEN);
   size_t len;
   char *buff= malloc(buff_len);
@@ -165,9 +166,11 @@ static int validate(const MYSQL_CONST_LEX_STRING *username,
     return 1;
   }
 
-  memcpy(buff, hostname->str, hostname->length);
-  memcpy(buff + hostname->length, username->str, username->length);
-  memcpy(buff + hostname->length + username->length, password->str,
+  int2store(buff, hostname->length);
+  int2store(buff + 2, username->length);
+  memcpy(buff + 4, hostname->str, hostname->length);
+  memcpy(buff + 4 + hostname->length, username->str, username->length);
+  memcpy(buff + 4 + hostname->length + username->length, password->str,
           password->length);
   buff[key_len]= 0;
   memset(hash, 0, sizeof(hash));
@@ -235,7 +238,7 @@ maria_declare_plugin(password_reuse_check)
   0x0100,
   NULL,
   sysvars,
-  "1.0",
+  "1.1",
   MariaDB_PLUGIN_MATURITY_GAMMA
 }
 maria_declare_plugin_end;
