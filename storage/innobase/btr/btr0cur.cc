@@ -5988,31 +5988,46 @@ public:
   @return true on success, false otherwise. */
   bool search_on_page(ulint level, ulint root_height, bool left)
   {
+    if (level != btr_page_get_level(m_block->page.frame))
+      return false;
+
+    m_n_recs= page_get_n_recs(m_block->page.frame);
+
     if (dtuple_get_n_fields(&m_tuple) > 0)
     {
-      /* Search for complete index fields. */
       m_up_bytes= m_low_bytes= 0;
       page_cur_search_with_match(m_block, index(), &m_tuple, m_page_mode,
                                  &m_up_match, &m_low_match, &m_page_cur,
                                  nullptr);
+      m_nth_rec= page_rec_get_n_recs_before(page_cur_get_rec(&m_page_cur));
     }
     else if (left)
     {
       page_cur_set_before_first(m_block, &m_page_cur);
       if (level)
+      {
         page_cur_move_to_next(&m_page_cur);
+        m_nth_rec= 1;
+      }
+      else
+        m_nth_rec= 0;
     }
     else
     {
-      page_cur_set_after_last(m_block, &m_page_cur);
-      if (level && !page_cur_move_to_prev(&m_page_cur))
-        return false;
+      m_nth_rec= m_n_recs;
+      if (!level)
+      {
+        page_cur_set_after_last(m_block, &m_page_cur);
+        ++m_nth_rec;
+      }
+      else
+      {
+        m_page_cur.block= m_block;
+        m_page_cur.rec= page_rec_get_nth(m_block->page.frame, m_nth_rec);
+      }
     }
 
-    m_nth_rec= page_rec_get_n_recs_before(page_cur_get_rec(&m_page_cur));
-    m_n_recs= page_get_n_recs(m_block->page.frame);
-
-    return level == btr_page_get_level(page_cur_get_page(&m_page_cur));
+    return true;
   }
 
   /** Gets page id of the current record child.
@@ -6022,6 +6037,7 @@ public:
   {
     const rec_t *node_ptr= page_cur_get_rec(&m_page_cur);
 
+    /* FIXME: get the child page number directly without computing offsets */
     *offsets= rec_get_offsets(node_ptr, index(), *offsets, 0, ULINT_UNDEFINED,
                               heap);
 
@@ -6087,7 +6103,8 @@ public:
   /** Copies block pointer and savepoint from another btr_est_cur_t in the case
   if both left and right border cursors point to the same block.
   @param o reference to the other btr_est_cur_t object. */
-  void set_block(const btr_est_cur_t &o) {
+  void set_block(const btr_est_cur_t &o)
+  {
     m_block= o.m_block;
     m_savepoint= o.m_savepoint;
   }
@@ -6301,28 +6318,39 @@ search_loop:
     p2.set_page_mode_for_leaves();
   }
 
-  if (!p1.search_on_page(height, root_height, true))
-    goto error;
-
   if (p1.page_id() == p2.page_id())
     p2.set_block(p1);
   else
   {
     ut_ad(diverged);
-    if (divergence_height != ULINT_UNDEFINED)
+    if (divergence_height != ULINT_UNDEFINED) {
+      /* We need to call p1.search_on_page() here as
+      btr_estimate_n_rows_in_range_on_level() uses p1.m_n_recs and
+      p1.m_nth_rec. */
+      if (!p1.search_on_page(height, root_height, true))
+        goto error;
       n_rows= btr_estimate_n_rows_in_range_on_level(
           height, p1, p2.page_id().page_no(), n_rows, is_n_rows_exact, mtr);
+    }
     if (!p2.fetch_child(height, mtr, nullptr))
       goto error;
   }
 
-  if (!p2.search_on_page(height, root_height, false))
-    goto error;
-
   if (height == 0)
     /* There is no need to unlach non-leaf pages here as they must already be
-    unlatched in btr_est_cur_t::fetch_child() */
+    unlatched in btr_est_cur_t::fetch_child(). Try to search on pages after
+    index->lock unlatching to decrease contention. */
     mtr_release_s_latch_at_savepoint(&mtr, savepoint, &index->lock);
+
+  /* There is no need to search on left page if
+  divergence_height != ULINT_UNDEFINED, as it was already searched before
+  btr_estimate_n_rows_in_range_on_level() call */
+  if (divergence_height == ULINT_UNDEFINED &&
+      !p1.search_on_page(height, root_height, true))
+    goto error;
+
+  if (!p2.search_on_page(height, root_height, false))
+    goto error;
 
   if (!diverged && (p1.nth_rec() != p2.nth_rec()))
   {
