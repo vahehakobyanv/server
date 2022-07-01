@@ -44,17 +44,24 @@ class Sql_cmd_delete final : public Sql_cmd_dml
 {
 public:
   Sql_cmd_delete(bool multitable_arg)
-    :  multitable(multitable_arg), save_protocol(NULL) {}
+    : orig_multitable(multitable_arg), save_protocol(NULL)
+  { multitable= orig_multitable; }
 
   enum_sql_command sql_command_code() const override
   {
-    return multitable ? SQLCOM_DELETE_MULTI : SQLCOM_DELETE;
+    return orig_multitable ? SQLCOM_DELETE_MULTI : SQLCOM_DELETE;
   }
 
   DML_prelocking_strategy *get_dml_prelocking_strategy()
   {
     return &dml_prelocking_strategy;
   }
+
+  bool processing_as_multitable_delete_prohibited(THD *thd);
+
+  bool is_multitable() { return multitable; }
+
+  void set_as_multitable() { multitable= true; }
 
 protected:
   /**
@@ -84,6 +91,9 @@ protected:
     is supposed to be converted to multi-table delete.
   */
   bool multitable;
+
+  /* Original value of the 'multitable' flag set by constructor */
+  const bool orig_multitable;
 
   /* The prelocking strategy used when opening the used tables */
   DML_prelocking_strategy dml_prelocking_strategy;

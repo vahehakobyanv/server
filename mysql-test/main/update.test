@@ -673,3 +673,115 @@ UPDATE t1,t2 SET t1.i1 = -39 WHERE t2.d1 <> t1.i1 AND t2.d1 = t1.d2;
 DROP TABLE t1,t2;
 
 --echo # End of MariaDB 10.2 tests
+
+--echo #
+--echo # MDEV-28965: single-table update/delete whose WHERE condition
+--echo #             contains subquery from mergeable derived table
+--echo #             that uses the updated/deleted table
+--echo #
+
+create table t1 (pk int, a int);
+insert into t1 values (1,3), (2, 7), (3,1), (4,9);
+
+let $q1=
+update t1 set a = 10
+  where a = ( select * from (select a from t1) dt where dt.a > 7);
+
+eval explain $q1;
+eval $q1;
+select * from t1;
+eval prepare stmt from "$q1";
+execute stmt;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+execute stmt;
+select * from t1;
+deallocate prepare stmt;
+
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+
+let $q2=
+update t1 set a = 10
+  where a <> ( select * from (select a from t1) dt where dt.a > 7)
+order by a limit 2;
+eval explain $q2;
+eval $q2;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+eval prepare stmt from "$q2";
+execute stmt;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+execute stmt;
+select * from t1;
+deallocate prepare stmt;
+
+delete from t1;
+insert into t1 values (1,3), (2, 7), (3,1), (4,9);
+
+let $q1=
+delete from t1
+  where a = ( select * from (select a from t1) dt where dt.a > 7);
+
+eval explain $q1;
+eval $q1;
+select * from t1;
+eval prepare stmt from "$q1";
+execute stmt;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+execute stmt;
+select * from t1;
+deallocate prepare stmt;
+
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+
+let $q2=
+delete from t1
+  where a = ( select * from (select a from t1) dt where dt.a > 5)
+returning pk, a;
+
+eval explain $q2;
+eval $q2;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+eval prepare stmt from "$q2";
+execute stmt;
+select * from t1;
+delete from t1;
+insert into t1 value (4,9), (3,1), (1,3);
+execute stmt;
+select * from t1;
+deallocate prepare stmt;
+
+delete from t1;
+insert into t1 values (1,3), (2, 7), (3,1), (4,9);
+
+let $q3=
+delete from t1
+  where a <> ( select * from (select a from t1) dt where dt.a > 7)
+order by a limit 2;
+eval explain $q3;
+eval $q3;
+select * from t1;
+delete from t1;
+insert into t1 values (1,3), (2, 7), (3,1), (4,9);
+eval prepare stmt from "$q3";
+execute stmt;
+select * from t1;
+delete from t1;
+insert into t1 values (1,3), (2, 7), (3,1), (4,9);
+execute stmt;
+select * from t1;
+deallocate prepare stmt;
+
+drop table t1;
+
+--echo # End of MariaDB 10.10 tests
